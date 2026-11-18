@@ -40,6 +40,7 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | scored: w64 181,750 / a0.18 w64 181,746 / a0.12 183,548 | - | - | merge gains 3 / 1 / 3. best single setting now ~181.7k; portfolio of current solver is saturated |
 | virtual leaves -V (consts 1-16 + powers of 2 as dict leaves, priced at real build cost, built only if used); base w32 x4 k1 t1 a0.25 o3 | V0 37,592 / V2 36,831 / V3 36,885 / V4 36,764 | -2.0% / -1.9% / -2.2% | time 242s / 627s / 1061s / 1349s. Biggest single gain so far. Unlike palette-in-registers (+0.5%), paying only on use wins |
 | scored V2 (w32 x4 k1 t1 a0.25 o3 -V 2) | 181,117 | ~-0.8% vs same base | smaller gain on scored than practice (-2%); merge gain 123 |
+| extra virtual sets with V2: -vs 2 (2^k+/-1) / -vs 3 (3*2^k) | 36,903 / 36,909 vs 36,831 | +0.2% | more helper values crowd the dict; consts 1-16 + powers of 2 is enough |
 
 ## Patterns so far
 - **Pool/register content is a strong lever.** Keeping built targets and starts live beats LRU. Next: try smarter keep scores (small constants, frequently used hubs).
