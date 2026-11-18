@@ -45,6 +45,8 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | dead-code elimination (src/dce.py) | - | - | palette runs p1/p2 shrink by 891/1322; others ~0. Needed for any palette-upfront approach |
 | per-puzzle cap V6 on scored_0982 | 356 vs 378 (V0) / 429 (V2) | - | best cap varies a lot per puzzle; public best 308 |
 | own-only portfolio (no public programs) | 176,782 | - | public 174k notebook gets 174,827 with 6 settings |
+| suffix re-solve on public best (keep best up to target k, our solver for the rest), w16 V2, 32 puzzles | 0 gain | - | 21 min. Our solver is weaker than public programs even mid-program (e.g. last 4 targets: 23 vs 20 instr) |
+| shared hidden factors: gcd(ti,tj) > 1e4 | <1% of pairs | - | all families, practice and scored: no factor structure |
 
 ## Patterns so far
 - **Pool/register content is a strong lever.** Keeping built targets and starts live beats LRU. Next: try smarter keep scores (small constants, frequently used hubs).
@@ -62,3 +64,5 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 - **Pay-on-use beats pay-upfront.** Same helper values (powers of two) hurt when pre-built in registers but give -2% as priced virtual leaves.
 - Leaderboard day 1 evening: #1 132,557, #10 137,544. Public merges reach 142.3k, so everyone starts there. Beating it needs improving existing best programs (LNS on suffixes), not standalone solves.
 - Our gap vs public best is almost all on big targets (50-60 bits: 13-29% worse); small targets only ~2%.
+- Public 142k = konbu17 dataset v10 (143.2k: Tony Li beam + wide planning + suffix re-solve + graph recombination + exact rewrites) + small merges + CP-SAT joint recipes (-46). Tony Li's private version is #3 (134k); his public code is 191k.
+- To contribute beyond 142k our per-target search must beat konbu's on big targets. Not there yet (our single setting 181k vs their 167-174k).
