@@ -11,7 +11,10 @@ typedef __int128 i128;
 static ll LIM;
 static int BEAM = 8, DEPTH = 14, ORDER = 0;
 static double ALPHA = 0.18;
-static int APPROX = 2;
+static int APPROX = 2, TIEBIG = 0;
+static double NOISE = 0;
+static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0;
+static bool DEBUG = getenv("ELF_DEBUG") != nullptr;
 static uint64_t SEED = 1;
 
 struct Ent { ll v; int a, b; char op; int c; };  // a,b: indices into dict (-1 for leaf)
@@ -62,7 +65,7 @@ struct Dict {
 struct Link { int f = -1, a = -1; char op = '+'; int f2 = -1; };  // op 'P': parent = child + f*f2 ; 'M': parent = f*f2 - child
 struct Node { ll r; int g; int parent; Link l; double rank; };
 // Terminal kinds: r = dict[t1] (t2=-1), or r = dict[t1] op dict[t2]
-struct Term { int node = -1; int t1 = -1, t2 = -1; char op = 0; };
+struct Term { int node = -1; int t1 = -1, t2 = -1; char op = 0; int t3 = -1; };  // op 'A': t1*t2+t3, 'B': t1*t2-t3
 
 struct Search {
     Dict& d; int best = 1 << 30; Term bt; vector<Node> hist; vector<Node> nxt;
@@ -74,8 +77,31 @@ struct Search {
         int id = d.ix.get(r);
         if (id >= 0) { if (g + d.e[id].c < best) { best = g + d.e[id].c; bt = {p, id, -1, 0}; } return; }
         if (g + 1 >= best) return;
+        if (TRI && g + 3 < best) {
+            // three-term: r = A*B +/- C, all from dict. Full dict at root, cost<=1 for A elsewhere.
+            int n = (p == 0 || TRI > 1) ? (int)d.e.size() : d.n1;
+            for (int i = 0; i < n; i++) {
+                const Ent& A = d.e[i];
+                if (A.v < 2 || A.v > r) continue;
+                int base = g + A.c + 2;
+                if (base >= best) continue;
+                ll q = r / A.v;
+                for (ll B = q; B <= q + 1; B++) {
+                    if (B < 2 || (i128)A.v * B > LIM) continue;
+                    int j = d.ix.get(B);
+                    if (j < 0 || base + d.e[j].c >= best) continue;
+                    ll m = A.v * B;
+                    if (m == r) continue;  // pure product handled by two-term
+                    ll C = m < r ? r - m : m - r;
+                    int k = d.ix.get(C);
+                    if (k < 0) continue;
+                    int tot = base + d.e[j].c + d.e[k].c;
+                    if (tot < best) { best = tot; bt = {p, i, j, m < r ? 'A' : 'B', k}; }
+                }
+            }
+        }
         // two-term: r = x op y, x in D0..D1 (cost<=1), y any dict entry
-        int lim1 = d.n1;
+        int lim1 = (DEEP && p == 0) ? (int)d.e.size() : d.n1;
         for (int i = 0; i < lim1; i++) {
             const Ent& x = d.e[i];
             int base = g + x.c + 1;
@@ -138,6 +164,22 @@ struct Search {
                 }
             }
         }
+        // additive two-term approximation: r ~ x + y, x cost<=1, y nearest in full dict
+        if (SUMAPPROX) for (int i = 0; i < d.n1; i++) {
+            ll x = d.e[i].v;
+            if (x >= r) continue;
+            ll q = r - x;
+            auto it2 = lower_bound(d.sorted.begin(), d.sorted.end(), make_pair(q, -1));
+            for (int k = -SUMAPPROX; k < SUMAPPROX; k++) {
+                long pos = (it2 - d.sorted.begin()) + k;
+                if (pos < 0 || pos >= (long)d.sorted.size()) continue;
+                auto [y, yi] = d.sorted[pos];
+                if (y == q || x > LIM - y) continue;
+                ll m = x + y;
+                if (m < r) offer(p, r - m, i, -1, 'S', yi);
+                else offer(p, m - r, i, -1, 'T', yi);
+            }
+        }
     }
     void run(ll t) {
         hist.push_back({t, 0, -1, {}, 0});
@@ -165,7 +207,7 @@ struct Recipe { char op; ll x, y; };  // value = x op y
 struct Solver {
     vector<ll> starts, targets; int R = 48;
     array<ll,48> reg{}; array<long,48> last{}; long clock = 0;
-    vector<Instr> prog; unordered_set<ll> covered; set<ll> need;
+    vector<Instr> prog; unordered_set<ll> covered, keep; set<ll> need;
     mt19937_64 rng;
     Solver(uint64_t s) : rng(s) {}
 
@@ -191,7 +233,7 @@ struct Solver {
                     auto u = uses.find(reg[i]);
                     if (u != uses.end() && u->second > 0) continue;
                     if (i == ra || i == rb) { /* overwriting a source is fine if not needed later */ }
-                    long pr = last[i] + (need.count(reg[i]) ? 0 : 0);
+                    long pr = last[i] + (KEEP && keep.count(reg[i]) ? (long)1e12 : 0);
                     if (pr < bestt) { bestt = pr; dst = i; }
                 }
                 if (dst < 0) { fprintf(stderr, "emit: no register\n"); exit(1); }
@@ -212,11 +254,12 @@ struct Solver {
     void addv(ll v, Recipe rc, vector<pair<ll,Recipe>>& plan, unordered_set<ll>& have) {
         if (have.insert(v).second) plan.push_back({v, rc});
     }
-    // Fallback binary method from 1 (always valid when limit >= target)
-    int solveTarget(ll t, Dict& d) {
+    void buildDict(Dict& d) {
         vector<ll> leaves;
         for (int i = 0; i < R; i++) if (reg[i]) leaves.push_back(reg[i]);
         d.build(leaves, true);
+    }
+    unique_ptr<Search> searchT(ll t, Dict& d) {
         int ob = BEAM, od = DEPTH;
         unique_ptr<Search> sp(new Search(d));
         sp->run(t);
@@ -225,13 +268,21 @@ struct Solver {
             sp.reset(new Search(d)); sp->run(t);
         }
         BEAM = ob; DEPTH = od;
-        Search& s = *sp;
-        if (s.bt.node < 0) return -1;
-        vector<pair<ll,Recipe>> plan; unordered_set<ll> have(leaves.begin(), leaves.end());
-        // terminal value
+        return sp;
+    }
+    vector<pair<ll,Recipe>> makePlan(ll t, Search& s, Dict& d) {
+        vector<pair<ll,Recipe>> plan; unordered_set<ll> have;
+        for (int i = 0; i < R; i++) if (reg[i]) have.insert(reg[i]);
         ll v;
         Term& T = s.bt;
         if (T.t2 < 0) { collect(d, T.t1, plan, have); v = d.e[T.t1].v; }
+        else if (T.op == 'A' || T.op == 'B') {
+            collect(d, T.t1, plan, have); collect(d, T.t2, plan, have); collect(d, T.t3, plan, have);
+            ll x = d.e[T.t1].v, y = d.e[T.t2].v, c = d.e[T.t3].v, m = x * y;
+            addv(m, {'*', x, y}, plan, have);
+            v = T.op == 'A' ? m + c : m - c;
+            addv(v, {T.op == 'A' ? '+' : '-', m, c}, plan, have);
+        }
         else {
             collect(d, T.t1, plan, have); collect(d, T.t2, plan, have);
             ll x = d.e[T.t1].v, y = d.e[T.t2].v; v = apply(T.op, x, y);
@@ -241,10 +292,11 @@ struct Solver {
             Link l = s.hist[p].l;
             if (l.f2 >= 0) {
                 collect(d, l.f, plan, have); collect(d, l.f2, plan, have);
-                ll x = d.e[l.f].v, y = d.e[l.f2].v, m = x * y;
-                addv(m, {'*', x, y}, plan, have);
-                ll nv = l.op == 'P' ? v + m : m - v;
-                addv(nv, {l.op == 'P' ? '+' : '-', l.op == 'P' ? v : m, l.op == 'P' ? m : v}, plan, have);
+                bool sum = l.op == 'S' || l.op == 'T', up = l.op == 'P' || l.op == 'S';
+                ll x = d.e[l.f].v, y = d.e[l.f2].v, m = sum ? x + y : x * y;
+                addv(m, {sum ? '+' : '*', x, y}, plan, have);
+                ll nv = up ? v + m : m - v;
+                addv(nv, {up ? '+' : '-', up ? v : m, up ? m : v}, plan, have);
                 v = nv; continue;
             }
             if (l.f >= 0) { collect(d, l.f, plan, have); ll f = d.e[l.f].v; ll nv = v * f; addv(nv, {'*', v, f}, plan, have); v = nv; }
@@ -257,15 +309,81 @@ struct Solver {
             }
         }
         if (v != t) { fprintf(stderr, "reconstruct mismatch %lld %lld\n", v, t); exit(1); }
+        return plan;
+    }
+    int solveTarget(ll t, Dict& d) {
+        buildDict(d);
+        auto sp = searchT(t, d);
+        if (sp->bt.node < 0) return -1;
+        auto plan = makePlan(t, *sp, d);
         emit(plan);
-        if (getenv("ELF_DEBUG")) fprintf(stderr, "%lld cost %zu\n", t, plan.size());
+        if (DEBUG) fprintf(stderr, "%lld cost %d\n", t, (int)plan.size());
         return plan.size();
+    }
+    bool bootstrap(Dict& d) {
+        for (ll c = 1; c <= 64; c++) {
+            if (find(c) >= 0) continue;
+            int id = d.ix.get(c);
+            if (id < 0) continue;
+            vector<pair<ll,Recipe>> plan; unordered_set<ll> have;
+            for (int i = 0; i < R; i++) if (reg[i]) have.insert(reg[i]);
+            collect(d, id, plan, have); emit(plan); return true;
+        }
+        return false;
+    }
+    // Seed registers with a power-of-two ladder (and small odd constants for PALETTE>=2).
+    void op1(char op, ll x, ll y) {
+        ll v = apply(op, x, y);
+        if (v <= 0 || v > LIM || find(v) >= 0) return;
+        vector<pair<ll,Recipe>> plan{{v, {op, x, y}}};
+        emit(plan); keep.insert(v);
+    }
+    void seedPalette() {
+        ll s0 = starts[0];
+        if (find(1) < 0) op1('/', s0, s0);
+        keep.insert(1);
+        op1('+', 1, 1);
+        ll p = 2;
+        for (int k = 0; k < 5; k++) { if ((i128)p * p > LIM) break; op1('*', p, p); p = p * p; }  // 4,16,256,65536,2^32
+        if (PALETTE >= 2) {
+            op1('+', 2, 1);  // 3
+            op1('+', 4, 1);  // 5
+            if (LIM >= 16) op1('-', 16, 1);  // 15
+            if (LIM >= 17) op1('+', 16, 1);  // 17
+        }
+    }
+    // Greedy: each step search all remaining targets on one dictionary, emit the cheapest.
+    void runGreedy(Dict& d) {
+        uniform_real_distribution<double> U(0, 1);
+        int guard = 0;
+        while (!need.empty()) {
+            for (auto it = need.begin(); it != need.end();) { if (find(*it) >= 0) it = need.erase(it); else ++it; }
+            if (need.empty()) break;
+            buildDict(d);
+            vector<tuple<double,ll,int>> cand;
+            for (ll t : need) {
+                auto sp = searchT(t, d);
+                if (sp->bt.node < 0) continue;
+                // noise for restarts: perturb cost slightly
+                double key = sp->best + (NOISE > 0 ? NOISE * U(rng) : 0) + 1e-9 * (TIEBIG ? -(double)t : (double)t);
+                cand.push_back({key, t, sp->best});
+            }
+            if (cand.empty()) { if (!bootstrap(d) || ++guard > 64) { fprintf(stderr, "stuck\n"); exit(1); } continue; }
+            sort(cand.begin(), cand.end());
+            ll t = get<1>(cand[0]);
+            auto sp = searchT(t, d);
+            auto plan = makePlan(t, *sp, d);
+            emit(plan);
+        }
     }
     void run() {
         for (size_t i = 0; i < starts.size(); i++) { reg[i] = starts[i]; last[i] = 0; }
-        for (ll t : targets) need.insert(t);
+        for (ll t : targets) { need.insert(t); keep.insert(t); }
+        for (ll s0 : starts) keep.insert(s0);
         for (ll s : starts) need.erase(s);
         static Dict d;
+        if (PALETTE) seedPalette();
+        if (ORDER == 3) { runGreedy(d); return; }
         vector<ll> order(need.begin(), need.end());
         if (ORDER == 1) reverse(order.begin(), order.end());
         if (ORDER == 2) shuffle(order.begin(), order.end(), rng);
@@ -294,7 +412,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i + 1 < argc; i += 2) {
         string k = argv[i]; double v = atof(argv[i + 1]);
         if (k == "-w") BEAM = v; else if (k == "-d") DEPTH = v; else if (k == "-a") ALPHA = v;
-        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v;
+        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v;
     }
     string id; ll limit; int ns, nt;
     while (cin >> id >> limit >> ns >> nt) {
