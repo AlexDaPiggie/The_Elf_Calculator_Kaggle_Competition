@@ -10,6 +10,7 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | 2 | 2026-11-18 | best/best.csv | per-puzzle min over v1, v2, v3 (v3 = w128, x4) | 184,766 | -2,758 |
 | 3 | 2026-11-18 | best/best.csv | + v5 (keep targets -k1, greedy order -o3, w32 x4; alone 184,012) | 182,242 | -2,524 |
 | 4 | 2026-11-18 | best/best.csv | + public dataset konbu17 (163,413, 115 CPU-h portfolio), validated; ours wins 80 puzzles | 163,256 | -18,986 |
+| 5 | 2026-11-18 | best/best.csv | + portfolio p1-p4 on scored (palette p1/p2, alpha 0.18/0.32; all w32 x4 k1 t1 o3) | 163,088 | -168 |
 
 ## Experiments (practice set unless noted)
 | Change | Prac score | Delta | Note |
@@ -32,6 +33,8 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | full MITM at root (-D1, X op Y both up to cost 2) | same per-target costs | 0 | no cost-5 solutions exist for 40-bit targets from our pool |
 | beam w1024 x8 d30 | ~same as w128 | ~0 | **search space is the limit, not width** |
 | palette in registers (-p1 ladder 2,4,16,256,2^16,2^32 / -p2 + odd consts) | 37,843 / 38,280 vs 37,643 | +0.5% / +1.7% | upfront cost not repaid on average; may win on big-target puzzles (portfolio) |
+| scored portfolio, single scores: p1 183,866 / p2 186,196 / a0.18 182,569 / a0.32 183,373 | - | - | merge gains vs 163,256 best: 28 / 2 / 132 / 6. alpha 0.18 best alone and most complementary |
+| bug: X*f - a link built X*f above limit (w64 run, scored_0234) | - | - | fixed in solver4; merge_best validation caught it, file never broken |
 
 ## Patterns so far
 - **Pool/register content is a strong lever.** Keeping built targets and starts live beats LRU. Next: try smarter keep scores (small constants, frequently used hubs).
@@ -45,3 +48,4 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
   - targets are almost never 1-2 ops from other targets (0-2%)
   - so the hidden structure is weak, and generic search quality is the main lever
 - Ops per target (practice v1): independent ~10.6, mixed ~8.4, shared ~6.4, multiplicative ~4.4. Independent and mixed (large 40-60 bit targets) carry most of the cost.
+- Marginal portfolio gains are now small (~0.1%) because the public konbu17 set dominates most puzzles. New gains need a stronger solver, not more variants of the current one.

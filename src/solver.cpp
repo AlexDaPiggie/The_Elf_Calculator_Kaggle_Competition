@@ -150,7 +150,7 @@ struct Search {
             int j = d.ix.get(rem);
             if (j >= 0) offer(p, q, i, j, '+');
             j = d.ix.get(f - rem);
-            if (j >= 0) offer(p, q + 1, i, j, '-');
+            if (j >= 0 && (i128)(q + 1) * f <= LIM) offer(p, q + 1, i, j, '-');
             if (APPROX && q > 16) {
                 auto it2 = lower_bound(d.sorted.begin(), d.sorted.end(), make_pair(q, -1));
                 for (int k = -APPROX; k < APPROX; k++) {
