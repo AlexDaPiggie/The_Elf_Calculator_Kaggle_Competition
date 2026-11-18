@@ -1,0 +1,7 @@
+data/
+subs/
+bin/
+baselines/
+research/kernels/
+*.exe
+__pycache__/
