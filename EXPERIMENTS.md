@@ -13,6 +13,7 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | 5 | 2026-11-18 | best/best.csv | + portfolio p1-p4 on scored (palette p1/p2, alpha 0.18/0.32; all w32 x4 k1 t1 o3) | 163,088 | -168 |
 | 6 | 2026-11-18 | best/best.csv | + p5-p7 (w64, a0.18 w64, a0.12) | 163,081 | -7 |
 | 7 | 2026-11-18 | best/best.csv | + virtual leaves V2 run (alone 181,117) | 162,958 | -123 |
+| 8 | 2026-11-18 | best/best.csv | + public notebook outputs: elias best-of-public (161.8k), sacuscreed public-merge (142k); all validated per program | 142,313 | -20,645 |
 
 ## Experiments (practice set unless noted)
 | Change | Prac score | Delta | Note |
@@ -41,6 +42,9 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | virtual leaves -V (consts 1-16 + powers of 2 as dict leaves, priced at real build cost, built only if used); base w32 x4 k1 t1 a0.25 o3 | V0 37,592 / V2 36,831 / V3 36,885 / V4 36,764 | -2.0% / -1.9% / -2.2% | time 242s / 627s / 1061s / 1349s. Biggest single gain so far. Unlike palette-in-registers (+0.5%), paying only on use wins |
 | scored V2 (w32 x4 k1 t1 a0.25 o3 -V 2) | 181,117 | ~-0.8% vs same base | smaller gain on scored than practice (-2%); merge gain 123 |
 | extra virtual sets with V2: -vs 2 (2^k+/-1) / -vs 3 (3*2^k) | 36,903 / 36,909 vs 36,831 | +0.2% | more helper values crowd the dict; consts 1-16 + powers of 2 is enough |
+| dead-code elimination (src/dce.py) | - | - | palette runs p1/p2 shrink by 891/1322; others ~0. Needed for any palette-upfront approach |
+| per-puzzle cap V6 on scored_0982 | 356 vs 378 (V0) / 429 (V2) | - | best cap varies a lot per puzzle; public best 308 |
+| own-only portfolio (no public programs) | 176,782 | - | public 174k notebook gets 174,827 with 6 settings |
 
 ## Patterns so far
 - **Pool/register content is a strong lever.** Keeping built targets and starts live beats LRU. Next: try smarter keep scores (small constants, frequently used hubs).
@@ -56,3 +60,5 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 - Ops per target (practice v1): independent ~10.6, mixed ~8.4, shared ~6.4, multiplicative ~4.4. Independent and mixed (large 40-60 bit targets) carry most of the cost.
 - Marginal portfolio gains are now small (~0.1%) because the public konbu17 set dominates most puzzles. New gains need a stronger solver, not more variants of the current one.
 - **Pay-on-use beats pay-upfront.** Same helper values (powers of two) hurt when pre-built in registers but give -2% as priced virtual leaves.
+- Leaderboard day 1 evening: #1 132,557, #10 137,544. Public merges reach 142.3k, so everyone starts there. Beating it needs improving existing best programs (LNS on suffixes), not standalone solves.
+- Our gap vs public best is almost all on big targets (50-60 bits: 13-29% worse); small targets only ~2%.

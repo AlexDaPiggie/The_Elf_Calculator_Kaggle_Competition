@@ -13,7 +13,7 @@ static int BEAM = 8, DEPTH = 14, ORDER = 0;
 static double ALPHA = 0.18;
 static int APPROX = 2, TIEBIG = 0;
 static double NOISE = 0;
-static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0, VC = 0, VSET = 1;
+static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0, VC = 0, VSET = 1, PREFIX = 0;
 static bool DEBUG = getenv("ELF_DEBUG") != nullptr;
 static uint64_t SEED = 1;
 
@@ -212,7 +212,7 @@ struct Search {
 // ---------- Puzzle state with real registers ----------
 struct Instr { char op; int a, b, d; };
 struct Solver {
-    vector<ll> starts, targets; int R = 48;
+    vector<ll> starts, targets; int R = 48; vector<Instr> pre;
     array<ll,48> reg{}; array<long,48> last{}; long clock = 0;
     vector<Instr> prog; unordered_set<ll> covered, keep; set<ll> need;
     mt19937_64 rng;
@@ -438,6 +438,11 @@ struct Solver {
         for (ll t : targets) { need.insert(t); keep.insert(t); }
         for (ll s0 : starts) keep.insert(s0);
         for (ll s : starts) need.erase(s);
+        for (auto& in : pre) {  // replay a given prefix program
+            ll v = apply(in.op, reg[in.a], reg[in.b]);
+            reg[in.d] = v; last[in.a] = last[in.b] = ++clock; last[in.d] = ++clock;
+            prog.push_back(in); need.erase(v);
+        }
         static Dict d;
         if (PALETTE) seedPalette();
         if (ORDER == 3) { runGreedy(d); return; }
@@ -469,7 +474,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i + 1 < argc; i += 2) {
         string k = argv[i]; double v = atof(argv[i + 1]);
         if (k == "-w") BEAM = v; else if (k == "-d") DEPTH = v; else if (k == "-a") ALPHA = v;
-        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v; else if (k == "-V") VC = v; else if (k == "-vs") VSET = v;
+        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v; else if (k == "-V") VC = v; else if (k == "-vs") VSET = v; else if (k == "-P") PREFIX = v;
     }
     string id; ll limit; int ns, nt;
     while (cin >> id >> limit >> ns >> nt) {
@@ -478,6 +483,10 @@ int main(int argc, char** argv) {
         S.starts.resize(ns); S.targets.resize(nt);
         for (auto& x : S.starts) cin >> x;
         for (auto& x : S.targets) cin >> x;
+        if (PREFIX) {
+            int np; cin >> np; S.pre.resize(np);
+            for (auto& in : S.pre) { string op; cin >> op >> in.a >> in.b >> in.d; in.op = op[0]; }
+        }
         S.run();
         printf("%s [", id.c_str());
         for (size_t k = 0; k < S.prog.size(); k++) {
