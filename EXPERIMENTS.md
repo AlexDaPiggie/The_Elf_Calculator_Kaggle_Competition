@@ -11,6 +11,7 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | 3 | 2026-11-18 | best/best.csv | + v5 (keep targets -k1, greedy order -o3, w32 x4; alone 184,012) | 182,242 | -2,524 |
 | 4 | 2026-11-18 | best/best.csv | + public dataset konbu17 (163,413, 115 CPU-h portfolio), validated; ours wins 80 puzzles | 163,256 | -18,986 |
 | 5 | 2026-11-18 | best/best.csv | + portfolio p1-p4 on scored (palette p1/p2, alpha 0.18/0.32; all w32 x4 k1 t1 o3) | 163,088 | -168 |
+| 6 | 2026-11-18 | best/best.csv | + p5-p7 (w64, a0.18 w64, a0.12) | 163,081 | -7 |
 
 ## Experiments (practice set unless noted)
 | Change | Prac score | Delta | Note |
@@ -35,6 +36,7 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | palette in registers (-p1 ladder 2,4,16,256,2^16,2^32 / -p2 + odd consts) | 37,843 / 38,280 vs 37,643 | +0.5% / +1.7% | upfront cost not repaid on average; may win on big-target puzzles (portfolio) |
 | scored portfolio, single scores: p1 183,866 / p2 186,196 / a0.18 182,569 / a0.32 183,373 | - | - | merge gains vs 163,256 best: 28 / 2 / 132 / 6. alpha 0.18 best alone and most complementary |
 | bug: X*f - a link built X*f above limit (w64 run, scored_0234) | - | - | fixed in solver4; merge_best validation caught it, file never broken |
+| scored: w64 181,750 / a0.18 w64 181,746 / a0.12 183,548 | - | - | merge gains 3 / 1 / 3. best single setting now ~181.7k; portfolio of current solver is saturated |
 
 ## Patterns so far
 - **Pool/register content is a strong lever.** Keeping built targets and starts live beats LRU. Next: try smarter keep scores (small constants, frequently used hubs).
