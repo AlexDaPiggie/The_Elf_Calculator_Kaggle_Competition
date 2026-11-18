@@ -13,11 +13,13 @@ static int BEAM = 8, DEPTH = 14, ORDER = 0;
 static double ALPHA = 0.18;
 static int APPROX = 2, TIEBIG = 0;
 static double NOISE = 0;
-static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0;
+static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0, VC = 0, VSET = 1;
 static bool DEBUG = getenv("ELF_DEBUG") != nullptr;
 static uint64_t SEED = 1;
 
-struct Ent { ll v; int a, b; char op; int c; };  // a,b: indices into dict (-1 for leaf)
+struct Ent { ll v; int a, b; char op; int c; };  // a,b: indices into dict (-1 for leaf); op 'V': virtual leaf, a = index into vleaves
+struct Recipe { char op; ll x, y; };  // value = x op y
+struct VLeaf { ll v; vector<pair<ll,Recipe>> chain; };  // value not in registers + recipe chain from live values
 
 struct Index {
     vector<ll> k; vector<int> id; vector<int> used; size_t m;
@@ -36,10 +38,16 @@ struct Index {
 struct Dict {
     vector<Ent> e; Index ix{23}; int n0 = 0, n1 = 0;
     vector<pair<ll,int>> sorted;  // all entries sorted by value
+    const vector<VLeaf>* vl = nullptr;
     inline void add(ll v, int a, int b, char op, int c) {
-        if (v > 0 && v <= LIM && ix.put(v, e.size())) e.push_back({v, a, b, op, c});
+        if (v <= 0 || v > LIM) return;
+        size_t s = ix.slot(v);
+        if (!ix.k[s]) { ix.k[s] = v; ix.id[s] = e.size(); ix.used.push_back(s); e.push_back({v, a, b, op, c}); return; }
+        Ent& o = e[ix.id[s]];
+        if (c < o.c) o = {v, a, b, op, c};  // cheaper recipe (only possible with virtual leaves)
     }
-    inline void comb(int i, int j, int c) {
+    inline void comb(int i, int j, int) {
+        int c = 1 + e[i].c + (i == j ? 0 : e[j].c);
         ll x = e[i].v, y = e[j].v;
         if (x < y) { swap(x, y); swap(i, j); }
         if (x <= LIM - y) add(x + y, i, j, '+', c);
@@ -47,9 +55,10 @@ struct Dict {
         if ((i128)x * y <= LIM) add(x * y, i, j, '*', c);
         if (x % y == 0 && y > 1) add(x / y, i, j, '/', c);
     }
-    void build(const vector<ll>& leaves, bool two) {
-        ix.clear(); e.clear(); sorted.clear();
+    void build(const vector<ll>& leaves, bool two, const vector<VLeaf>* virt = nullptr) {
+        ix.clear(); e.clear(); sorted.clear(); vl = virt;
         for (ll v : leaves) add(v, -1, -1, 0, 0);
+        if (virt) for (int k = 0; k < (int)virt->size(); k++) add((*virt)[k].v, k, -1, 'V', (*virt)[k].chain.size());
         n0 = e.size();
         for (int i = 0; i < n0; i++) for (int j = 0; j <= i; j++) comb(i, j, 1);
         n1 = e.size();
@@ -202,8 +211,6 @@ struct Search {
 
 // ---------- Puzzle state with real registers ----------
 struct Instr { char op; int a, b, d; };
-struct Recipe { char op; ll x, y; };  // value = x op y
-
 struct Solver {
     vector<ll> starts, targets; int R = 48;
     array<ll,48> reg{}; array<long,48> last{}; long clock = 0;
@@ -248,16 +255,65 @@ struct Solver {
         const Ent& e = d.e[id];
         if (have.count(e.v)) return;
         if (e.a < 0) return;  // leaf = live register
+        if (e.op == 'V') { for (auto& [v, rc] : (*d.vl)[e.a].chain) addv(v, rc, plan, have); return; }
         collect(d, e.a, plan, have); collect(d, e.b, plan, have);
         if (have.insert(e.v).second) plan.push_back({e.v, {e.op, d.e[e.a].v, d.e[e.b].v}});
     }
     void addv(ll v, Recipe rc, vector<pair<ll,Recipe>>& plan, unordered_set<ll>& have) {
         if (have.insert(v).second) plan.push_back({v, rc});
     }
+    vector<VLeaf> vleaves;
+    // Virtual leaves: small constants and powers of two not in registers, with their cheapest
+    // recipe chain from live values (Bellman-Ford over a small candidate set).
+    void makeVirtual(const vector<ll>& live) {
+        vleaves.clear();
+        if (!VC) return;
+        vector<ll> S;
+        for (ll c = 1; c <= 16; c++) S.push_back(c);
+        for (ll p = 32; p <= LIM && p > 0; p *= 2) { S.push_back(p); if (p > LIM / 2) break; }
+        if (VSET >= 2) for (ll p = 32; p <= LIM / 2; p *= 2) { S.push_back(p - 1); S.push_back(p + 1); }
+        unordered_set<ll> L(live.begin(), live.end());
+        for (ll v : live) S.push_back(v);
+        sort(S.begin(), S.end()); S.erase(unique(S.begin(), S.end()), S.end());
+        int n = S.size();
+        unordered_map<ll,int> pos; for (int i = 0; i < n; i++) pos[S[i]] = i;
+        vector<int> cost(n, 1 << 20); vector<Recipe> rc(n);
+        for (int i = 0; i < n; i++) if (L.count(S[i])) cost[i] = 0;
+        int i1 = pos.count(1) ? pos[1] : -1;
+        if (i1 >= 0 && cost[i1] > 1 && !live.empty()) { cost[i1] = 1; rc[i1] = {'/', live[0], live[0]}; }
+        for (bool ch = true; ch;) {
+            ch = false;
+            for (int i = 0; i < n; i++) if (cost[i] < 1 << 20) for (int j = 0; j <= i; j++) if (cost[j] < 1 << 20) {
+                ll x = S[i], y = S[j]; int c = 1 + cost[i] + (i == j ? 0 : cost[j]);
+                ll cand[3]; char op[3] = {'+', '-', '*'}; bool ok[3];
+                ok[0] = x <= LIM - y; cand[0] = x + y;
+                ok[1] = x > y; cand[1] = x - y;
+                ok[2] = (i128)x * y <= LIM; cand[2] = ok[2] ? x * y : 0;
+                for (int k = 0; k < 3; k++) if (ok[k]) {
+                    auto it = pos.find(cand[k]);
+                    if (it != pos.end() && c < cost[it->second]) { cost[it->second] = c; rc[it->second] = {op[k], x, y}; ch = true; }
+                }
+            }
+        }
+        // build deduplicated chains
+        function<void(ll, vector<pair<ll,Recipe>>&, unordered_set<ll>&)> chain = [&](ll v, vector<pair<ll,Recipe>>& out, unordered_set<ll>& have) {
+            if (L.count(v) || have.count(v)) return;
+            int i = pos[v];
+            chain(rc[i].x, out, have); chain(rc[i].y, out, have);
+            if (have.insert(v).second) out.push_back({v, rc[i]});
+        };
+        for (int i = 0; i < n; i++) {
+            if (cost[i] == 0 || cost[i] > 64) continue;
+            VLeaf v{S[i], {}}; unordered_set<ll> have;
+            chain(S[i], v.chain, have);
+            if ((int)v.chain.size() <= VC) vleaves.push_back(move(v));
+        }
+    }
     void buildDict(Dict& d) {
         vector<ll> leaves;
         for (int i = 0; i < R; i++) if (reg[i]) leaves.push_back(reg[i]);
-        d.build(leaves, true);
+        makeVirtual(leaves);
+        d.build(leaves, true, &vleaves);
     }
     unique_ptr<Search> searchT(ll t, Dict& d) {
         int ob = BEAM, od = DEPTH;
@@ -412,7 +468,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i + 1 < argc; i += 2) {
         string k = argv[i]; double v = atof(argv[i + 1]);
         if (k == "-w") BEAM = v; else if (k == "-d") DEPTH = v; else if (k == "-a") ALPHA = v;
-        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v;
+        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v; else if (k == "-V") VC = v; else if (k == "-vs") VSET = v;
     }
     string id; ll limit; int ns, nt;
     while (cin >> id >> limit >> ns >> nt) {
