@@ -16,9 +16,10 @@ def run(batch):
     r = subprocess.run([exe, *args], input='\n'.join(lines) + '\n', text=True, capture_output=True)
     if r.returncode: raise RuntimeError(r.stderr[-2000:])
     return [l.split(' ', 1) for l in r.stdout.splitlines()]
+BS = int(__import__('os').environ.get('BATCH', 5))
 progs = {}
 with ThreadPoolExecutor(16) as ex:
-    for rows in ex.map(run, [items[i:i+5] for i in range(0, len(items), 5)]):
+    for rows in ex.map(run, [items[i:i+BS] for i in range(0, len(items), BS)]):
         for k, v in rows: progs[k] = json.loads(v)
 print('score', score(P, progs))
 write_submission(out, progs)

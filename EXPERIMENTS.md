@@ -47,6 +47,12 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | own-only portfolio (no public programs) | 176,782 | - | public 174k notebook gets 174,827 with 6 settings |
 | suffix re-solve on public best (keep best up to target k, our solver for the rest), w16 V2, 32 puzzles | 0 gain | - | 21 min. Our solver is weaker than public programs even mid-program (e.g. last 4 targets: 23 vs 20 instr) |
 | shared hidden factors: gcd(ti,tj) > 1e4 | <1% of pairs | - | all families, practice and scored: no factor structure |
+| bench_big (60 scored puzzles, max target >= 50 bits), base w32 x4 t1 a0.25 o3 V2 k1 | ours 14,475 vs public best 10,910 | +33% | benchmark for big-target work (data/bench_big.csv) |
+| -H 32 / -H 128 (recently evicted values as priced leaves) | 14,456 / 14,391 | -0.1% / -0.6% | small gain |
+| -k 2 / -k 3 (protect starts + small values, targets evictable) | 16,909 / 16,592 | +17% / +15% | much worse: finished targets are valuable as operands |
+| search probe: our solver builds ONE target from public state | 2,880 vs public 3,000 | -4% | per-target search is not the weak point |
+| search probe: our solver finishes the program from public state after target 1 / 10 | +35.8% / +40.2% | - | gap is what we leave behind in registers, not per-target search |
+| -k 4 reuse-aware eviction (scratch protected by times used as operand x weight) -uw 20 / 80 / 250 / 800 | 14,088 / 13,871 / 13,911 / 13,933 | -2.7% / -4.2% / -3.9% / -3.7% | weight 80 best; protecting reused intermediates is the lever |
 
 ## Patterns so far
 - **Pool/register content is a strong lever.** Keeping built targets and starts live beats LRU. Next: try smarter keep scores (small constants, frequently used hubs).
@@ -66,3 +72,4 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 - Our gap vs public best is almost all on big targets (50-60 bits: 13-29% worse); small targets only ~2%.
 - Public 142k = konbu17 dataset v10 (143.2k: Tony Li beam + wide planning + suffix re-solve + graph recombination + exact rewrites) + small merges + CP-SAT joint recipes (-46). Tony Li's private version is #3 (134k); his public code is 191k.
 - To contribute beyond 142k our per-target search must beat konbu's on big targets. Not there yet (our single setting 181k vs their 167-174k).
+- **Register content decides later targets.** Public programs reuse mid-size intermediates and finished targets across many targets (operand share from targets 3.2% vs ours 0.7%). Protecting values that were already reused gave -4.2% on big-target puzzles; protecting only small constants made it 15% worse.

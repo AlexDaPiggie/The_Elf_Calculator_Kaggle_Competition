@@ -13,7 +13,7 @@ static int BEAM = 8, DEPTH = 14, ORDER = 0;
 static double ALPHA = 0.18;
 static int APPROX = 2, TIEBIG = 0;
 static double NOISE = 0;
-static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0, VC = 0, VSET = 1, PREFIX = 0;
+static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0, VC = 0, VSET = 1, PREFIX = 0, HV = 0; static ll KSMALL = 1 << 16; static long UCW = 40;
 static bool DEBUG = getenv("ELF_DEBUG") != nullptr;
 static uint64_t SEED = 1;
 
@@ -212,8 +212,8 @@ struct Search {
 // ---------- Puzzle state with real registers ----------
 struct Instr { char op; int a, b, d; };
 struct Solver {
-    vector<ll> starts, targets; int R = 48; vector<Instr> pre;
-    array<ll,48> reg{}; array<long,48> last{}; long clock = 0;
+    vector<ll> starts, targets; int R = 48; vector<Instr> pre; vector<ll> histv;  // values ever held (most recent last)
+    array<ll,48> reg{}; array<long,48> last{}; array<int,48> uc{}; long clock = 0;
     vector<Instr> prog; unordered_set<ll> covered, keep; set<ll> need;
     mt19937_64 rng;
     Solver(uint64_t s) : rng(s) {}
@@ -231,7 +231,7 @@ struct Solver {
             int ra = find(rc.x), rb = find(rc.y);
             if (ra < 0 || rb < 0) { fprintf(stderr, "emit: missing operand\n"); exit(1); }
             uses[rc.x]--; uses[rc.y]--;
-            last[ra] = last[rb] = ++clock;
+            last[ra] = last[rb] = ++clock; uc[ra]++; uc[rb]++;
             int dst = find(v);
             if (dst < 0) {
                 long bestt = LONG_MAX; dst = -1;
@@ -240,13 +240,20 @@ struct Solver {
                     auto u = uses.find(reg[i]);
                     if (u != uses.end() && u->second > 0) continue;
                     if (i == ra || i == rb) { /* overwriting a source is fine if not needed later */ }
-                    long pr = last[i] + (KEEP && keep.count(reg[i]) ? (long)1e12 : 0);
+                    long pr = last[i];
+                    if (KEEP == 1) pr += keep.count(reg[i]) ? (long)1e12 : 0;
+                    else if (KEEP == 4) pr += keep.count(reg[i]) ? (long)1e12 : (long)uc[i] * UCW;  // reuse evidence protects scratch
+                    else if (KEEP >= 2) {  // protect starts and small helpers; finished targets are ordinary
+                        bool st = std::find(starts.begin(), starts.end(), reg[i]) != starts.end();
+                        if (st || reg[i] < KSMALL) pr += (long)1e12;
+                        if (KEEP == 3 && !st && keep.count(reg[i])) pr -= (long)1e6;  // done targets go first
+                    }
                     if (pr < bestt) { bestt = pr; dst = i; }
                 }
                 if (dst < 0) { fprintf(stderr, "emit: no register\n"); exit(1); }
             }
-            prog.push_back({rc.op, ra, rb, dst});
-            reg[dst] = v; last[dst] = ++clock;
+            prog.push_back({rc.op, ra, rb, dst}); histv.push_back(v);
+            reg[dst] = v; last[dst] = ++clock; uc[dst] = 0;
             need.erase(v);
         }
     }
@@ -275,6 +282,12 @@ struct Solver {
         if (VSET == 3) for (ll p = 16; p <= LIM / 3; p *= 2) S.push_back(3 * p);
         unordered_set<ll> L(live.begin(), live.end());
         for (ll v : live) S.push_back(v);
+        if (HV) {  // recently held values that were evicted: rebuildable at a price
+            unordered_set<ll> L0(live.begin(), live.end()); int cnt = 0;
+            for (int i = (int)histv.size() - 1; i >= 0 && cnt < HV; i--)
+                if (!L0.count(histv[i])) { S.push_back(histv[i]); cnt++; }
+            for (ll v : starts) S.push_back(v);
+        }
         sort(S.begin(), S.end()); S.erase(unique(S.begin(), S.end()), S.end());
         int n = S.size();
         unordered_map<ll,int> pos; for (int i = 0; i < n; i++) pos[S[i]] = i;
@@ -441,7 +454,7 @@ struct Solver {
         for (auto& in : pre) {  // replay a given prefix program
             ll v = apply(in.op, reg[in.a], reg[in.b]);
             reg[in.d] = v; last[in.a] = last[in.b] = ++clock; last[in.d] = ++clock;
-            prog.push_back(in); need.erase(v);
+            prog.push_back(in); need.erase(v); histv.push_back(v);
         }
         static Dict d;
         if (PALETTE) seedPalette();
@@ -474,7 +487,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i + 1 < argc; i += 2) {
         string k = argv[i]; double v = atof(argv[i + 1]);
         if (k == "-w") BEAM = v; else if (k == "-d") DEPTH = v; else if (k == "-a") ALPHA = v;
-        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v; else if (k == "-V") VC = v; else if (k == "-vs") VSET = v; else if (k == "-P") PREFIX = v;
+        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v; else if (k == "-V") VC = v; else if (k == "-vs") VSET = v; else if (k == "-P") PREFIX = v; else if (k == "-H") HV = v; else if (k == "-ks") KSMALL = (ll)v; else if (k == "-uw") UCW = (long)v;
     }
     string id; ll limit; int ns, nt;
     while (cin >> id >> limit >> ns >> nt) {
