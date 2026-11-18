@@ -271,7 +271,8 @@ struct Solver {
         vector<ll> S;
         for (ll c = 1; c <= 16; c++) S.push_back(c);
         for (ll p = 32; p <= LIM && p > 0; p *= 2) { S.push_back(p); if (p > LIM / 2) break; }
-        if (VSET >= 2) for (ll p = 32; p <= LIM / 2; p *= 2) { S.push_back(p - 1); S.push_back(p + 1); }
+        if (VSET == 2) for (ll p = 32; p <= LIM / 2; p *= 2) { S.push_back(p - 1); S.push_back(p + 1); }
+        if (VSET == 3) for (ll p = 16; p <= LIM / 3; p *= 2) S.push_back(3 * p);
         unordered_set<ll> L(live.begin(), live.end());
         for (ll v : live) S.push_back(v);
         sort(S.begin(), S.end()); S.erase(unique(S.begin(), S.end()), S.end());

@@ -12,6 +12,7 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | 4 | 2026-11-18 | best/best.csv | + public dataset konbu17 (163,413, 115 CPU-h portfolio), validated; ours wins 80 puzzles | 163,256 | -18,986 |
 | 5 | 2026-11-18 | best/best.csv | + portfolio p1-p4 on scored (palette p1/p2, alpha 0.18/0.32; all w32 x4 k1 t1 o3) | 163,088 | -168 |
 | 6 | 2026-11-18 | best/best.csv | + p5-p7 (w64, a0.18 w64, a0.12) | 163,081 | -7 |
+| 7 | 2026-11-18 | best/best.csv | + virtual leaves V2 run (alone 181,117) | 162,958 | -123 |
 
 ## Experiments (practice set unless noted)
 | Change | Prac score | Delta | Note |
@@ -38,6 +39,7 @@ Score = total instructions (lower is better). Local score is exact (no public/pr
 | bug: X*f - a link built X*f above limit (w64 run, scored_0234) | - | - | fixed in solver4; merge_best validation caught it, file never broken |
 | scored: w64 181,750 / a0.18 w64 181,746 / a0.12 183,548 | - | - | merge gains 3 / 1 / 3. best single setting now ~181.7k; portfolio of current solver is saturated |
 | virtual leaves -V (consts 1-16 + powers of 2 as dict leaves, priced at real build cost, built only if used); base w32 x4 k1 t1 a0.25 o3 | V0 37,592 / V2 36,831 / V3 36,885 / V4 36,764 | -2.0% / -1.9% / -2.2% | time 242s / 627s / 1061s / 1349s. Biggest single gain so far. Unlike palette-in-registers (+0.5%), paying only on use wins |
+| scored V2 (w32 x4 k1 t1 a0.25 o3 -V 2) | 181,117 | ~-0.8% vs same base | smaller gain on scored than practice (-2%); merge gain 123 |
 
 ## Patterns so far
 - **Pool/register content is a strong lever.** Keeping built targets and starts live beats LRU. Next: try smarter keep scores (small constants, frequently used hubs).
