@@ -1,0 +1,2 @@
+- Widening search to keep near-best terminals (-S slack, even with the cap fix) did not beat baseline (S1 2,241, S2 2,249 vs 2,224 on 8 puzzles).
+- Long runs must checkpoint (partial output + resume); a laptop shutdown lost 3 h of an un-checkpointed run.

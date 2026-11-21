@@ -13,7 +13,7 @@ static int BEAM = 8, DEPTH = 14, ORDER = 0;
 static double ALPHA = 0.18;
 static int APPROX = 2, TIEBIG = 0;
 static double NOISE = 0;
-static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0, VC = 0, VSET = 1, PREFIX = 0, HV = 0; static ll KSMALL = 1 << 16; static long UCW = 40;
+static int SUMAPPROX = 0, KEEP = 0, TRI = 0, DEEP = 0, PALETTE = 0, VC = 0, VSET = 1, PREFIX = 0, HV = 0; static ll KSMALL = 1 << 16; static long UCW = 40; static int LA = 0, SLK = 0, LM = 0, HINTF = 0, WC = 3, KEEPPRE = 0, REGSN = 48; static double LW = 0;
 static bool DEBUG = getenv("ELF_DEBUG") != nullptr;
 static uint64_t SEED = 1;
 
@@ -77,35 +77,37 @@ struct Node { ll r; int g; int parent; Link l; double rank; };
 struct Term { int node = -1; int t1 = -1, t2 = -1; char op = 0; int t3 = -1; };  // op 'A': t1*t2+t3, 'B': t1*t2-t3
 
 struct Search {
-    Dict& d; int best = 1 << 30; Term bt; vector<Node> hist; vector<Node> nxt;
+    Dict& d; int best = 1 << 30; Term bt; vector<pair<int,Term>> cands; vector<Node> hist; vector<Node> nxt;
     unordered_map<ll,int> seen;
     Search(Dict& d) : d(d) {}
+    inline int L() const { return best + SLK; }
+    void rec(int tot, const Term& t) { bool imp = tot < best; if (imp) { best = tot; bt = t; } if (SLK > 0 && (imp || cands.size() < 48)) cands.push_back({tot, t}); }
     inline int ec(int id) const { return id < 0 ? 0 : d.e[id].c; }
     void terminal(int p, ll r) {
         int g = hist[p].g;
         int id = d.ix.get(r);
-        if (id >= 0) { if (g + d.e[id].c < best) { best = g + d.e[id].c; bt = {p, id, -1, 0}; } return; }
-        if (g + 1 >= best) return;
-        if (TRI && g + 3 < best) {
+        if (id >= 0) { if (g + d.e[id].c < L()) rec(g + d.e[id].c, {p, id, -1, 0}); return; }
+        if (g + 1 >= L()) return;
+        if (TRI && g + 3 < L()) {
             // three-term: r = A*B +/- C, all from dict. Full dict at root, cost<=1 for A elsewhere.
             int n = (p == 0 || TRI > 1) ? (int)d.e.size() : d.n1;
             for (int i = 0; i < n; i++) {
                 const Ent& A = d.e[i];
                 if (A.v < 2 || A.v > r) continue;
                 int base = g + A.c + 2;
-                if (base >= best) continue;
+                if (base >= L()) continue;
                 ll q = r / A.v;
                 for (ll B = q; B <= q + 1; B++) {
                     if (B < 2 || (i128)A.v * B > LIM) continue;
                     int j = d.ix.get(B);
-                    if (j < 0 || base + d.e[j].c >= best) continue;
+                    if (j < 0 || base + d.e[j].c >= L()) continue;
                     ll m = A.v * B;
                     if (m == r) continue;  // pure product handled by two-term
                     ll C = m < r ? r - m : m - r;
                     int k = d.ix.get(C);
                     if (k < 0) continue;
                     int tot = base + d.e[j].c + d.e[k].c;
-                    if (tot < best) { best = tot; bt = {p, i, j, m < r ? 'A' : 'B', k}; }
+                    if (tot < L()) rec(tot, {p, i, j, m < r ? 'A' : 'B', k});
                 }
             }
         }
@@ -114,20 +116,20 @@ struct Search {
         for (int i = 0; i < lim1; i++) {
             const Ent& x = d.e[i];
             int base = g + x.c + 1;
-            if (base >= best) continue;
+            if (base >= L()) continue;
             ll xv = x.v;
-            if (xv < r) { int j = d.ix.get(r - xv); if (j >= 0 && base + d.e[j].c < best) { best = base + d.e[j].c; bt = {p, i, j, '+'}; } }
-            if (xv <= LIM - r) { int j = d.ix.get(r + xv); if (j >= 0 && base + d.e[j].c < best) { best = base + d.e[j].c; bt = {p, j, i, '-'}; } }
-            if (xv > r) { int j = d.ix.get(xv - r); if (j >= 0 && base + d.e[j].c < best) { best = base + d.e[j].c; bt = {p, i, j, '-'}; } }
-            if (xv > 1 && r % xv == 0) { int j = d.ix.get(r / xv); if (j >= 0 && base + d.e[j].c < best) { best = base + d.e[j].c; bt = {p, i, j, '*'}; } }
-            if (xv > 1 && (i128)r * xv <= LIM) { int j = d.ix.get(r * xv); if (j >= 0 && base + d.e[j].c < best) { best = base + d.e[j].c; bt = {p, j, i, '/'}; } }
+            if (xv < r) { int j = d.ix.get(r - xv); if (j >= 0 && base + d.e[j].c < L()) rec(base + d.e[j].c, {p, i, j, '+'}); }
+            if (xv <= LIM - r) { int j = d.ix.get(r + xv); if (j >= 0 && base + d.e[j].c < L()) rec(base + d.e[j].c, {p, j, i, '-'}); }
+            if (xv > r) { int j = d.ix.get(xv - r); if (j >= 0 && base + d.e[j].c < L()) rec(base + d.e[j].c, {p, i, j, '-'}); }
+            if (xv > 1 && r % xv == 0) { int j = d.ix.get(r / xv); if (j >= 0 && base + d.e[j].c < L()) rec(base + d.e[j].c, {p, i, j, '*'}); }
+            if (xv > 1 && (i128)r * xv <= LIM) { int j = d.ix.get(r * xv); if (j >= 0 && base + d.e[j].c < L()) rec(base + d.e[j].c, {p, j, i, '/'}); }
         }
     }
     void offer(int p, ll v, int f, int a, char op, int f2 = -1) {
         if (v <= 0 || v > LIM) return;
         int g = hist[p].g + (f >= 0 ? ec(f) + 1 : 0) + (a >= 0 ? ec(a) + 1 : 0);
         if (f2 >= 0) g = hist[p].g + ec(f) + ec(f2) + 2;
-        if (g + 1 >= best) return;
+        if (g + 1 >= L()) return;
         if (v >= hist[p].r) return;
         auto it = seen.find(v);
         if (it != seen.end() && it->second <= g) return;
@@ -196,10 +198,10 @@ struct Search {
         vector<int> front{0};
         for (int depth = 0; depth < DEPTH && !front.empty(); depth++) {
             nxt.clear();
-            for (int p : front) if (hist[p].g + 2 < best) expand(p);
+            for (int p : front) if (hist[p].g + 2 < L()) expand(p);
             front.clear();
             for (Node& s : nxt) {
-                if (s.g + 1 >= best) continue;
+                if (s.g + 1 >= L()) continue;
                 seen[s.r] = s.g;
                 int id = hist.size(); hist.push_back(s);
                 terminal(id, s.r);
@@ -212,8 +214,8 @@ struct Search {
 // ---------- Puzzle state with real registers ----------
 struct Instr { char op; int a, b, d; };
 struct Solver {
-    vector<ll> starts, targets; int R = 48; vector<Instr> pre; vector<ll> histv;  // values ever held (most recent last)
-    array<ll,48> reg{}; array<long,48> last{}; array<int,48> uc{}; long clock = 0;
+    vector<ll> starts, targets; int R = REGSN; vector<Instr> pre; vector<ll> histv; vector<ll> hintv; unordered_set<ll> hs;  // values ever held (most recent last)
+    array<ll,256> reg{}; array<long,256> last{}; array<int,256> uc{}; long clock = 0;
     vector<Instr> prog; unordered_set<ll> covered, keep; set<ll> need;
     mt19937_64 rng;
     Solver(uint64_t s) : rng(s) {}
@@ -288,6 +290,7 @@ struct Solver {
                 if (!L0.count(histv[i])) { S.push_back(histv[i]); cnt++; }
             for (ll v : starts) S.push_back(v);
         }
+        for (ll v : hintv) if (v > 0 && v <= LIM) S.push_back(v);
         sort(S.begin(), S.end()); S.erase(unique(S.begin(), S.end()), S.end());
         int n = S.size();
         unordered_map<ll,int> pos; for (int i = 0; i < n; i++) pos[S[i]] = i;
@@ -320,7 +323,7 @@ struct Solver {
             if (cost[i] == 0 || cost[i] > 64) continue;
             VLeaf v{S[i], {}}; unordered_set<ll> have;
             chain(S[i], v.chain, have);
-            if ((int)v.chain.size() <= VC) vleaves.push_back(move(v));
+            if ((int)v.chain.size() <= (hs.count(S[i]) ? max(VC, WC) : VC)) vleaves.push_back(move(v));
         }
     }
     void buildDict(Dict& d) {
@@ -338,13 +341,18 @@ struct Solver {
             sp.reset(new Search(d)); sp->run(t);
         }
         BEAM = ob; DEPTH = od;
+        if (SLK > 0 && sp->bt.node >= 0 && sp->cands.size() > 1) {
+            size_t bs = makePlanT(t, *sp, d, sp->bt).size(); Term bt = sp->bt;
+            for (auto& [tot, T] : sp->cands) { if (tot >= sp->best + SLK) continue; auto pl = makePlanT(t, *sp, d, T); if (pl.size() < bs) { bs = pl.size(); bt = T; } }
+            sp->bt = bt;
+        }
         return sp;
     }
-    vector<pair<ll,Recipe>> makePlan(ll t, Search& s, Dict& d) {
+    vector<pair<ll,Recipe>> makePlan(ll t, Search& s, Dict& d) { return makePlanT(t, s, d, s.bt); }
+    vector<pair<ll,Recipe>> makePlanT(ll t, Search& s, Dict& d, const Term& T) {
         vector<pair<ll,Recipe>> plan; unordered_set<ll> have;
         for (int i = 0; i < R; i++) if (reg[i]) have.insert(reg[i]);
         ll v;
-        Term& T = s.bt;
         if (T.t2 < 0) { collect(d, T.t1, plan, have); v = d.e[T.t1].v; }
         else if (T.op == 'A' || T.op == 'B') {
             collect(d, T.t1, plan, have); collect(d, T.t2, plan, have); collect(d, T.t3, plan, have);
@@ -422,6 +430,21 @@ struct Solver {
             if (LIM >= 17) op1('+', 16, 1);  // 17
         }
     }
+    double nextBest(Dict& d) {
+        for (auto it = need.begin(); it != need.end();) { if (find(*it) >= 0) it = need.erase(it); else ++it; }
+        if (need.empty()) return 0;
+        buildDict(d); vector<int> cs;
+        for (ll t : need) { auto sp = searchT(t, d); if (sp->bt.node >= 0) cs.push_back((int)sp->best); }
+        if (cs.empty()) return 50;
+        sort(cs.begin(), cs.end());
+        double r = cs[0];
+        if (LW > 0) {
+            size_t m = (LM > 0 && (size_t)LM < cs.size()) ? LM : cs.size();
+            double sum = 0; for (size_t i = 0; i < m; i++) sum += cs[i];
+            r += LW * sum / m;
+        }
+        return r;
+    }
     // Greedy: each step search all remaining targets on one dictionary, emit the cheapest.
     void runGreedy(Dict& d) {
         uniform_real_distribution<double> U(0, 1);
@@ -443,6 +466,19 @@ struct Solver {
             ll t = get<1>(cand[0]);
             auto sp = searchT(t, d);
             auto plan = makePlan(t, *sp, d);
+            if (LA > 1 && cand.size() > 1) {  // lookahead: own cost + cheapest next target after emitting
+                static Dict d2;
+                double bestTot = 1e18; vector<pair<ll,Recipe>> bestPlan;
+                for (int i = 0; i < LA && i < (int)cand.size(); i++) {
+                    ll ti = get<1>(cand[i]);
+                    auto spi = searchT(ti, d);
+                    auto pl = makePlan(ti, *spi, d);
+                    Solver c(*this); c.emit(pl);
+                    double tot = pl.size() + c.nextBest(d2) + 1e-9 * i;
+                    if (tot < bestTot) { bestTot = tot; bestPlan = pl; }
+                }
+                plan = bestPlan;
+            }
             emit(plan);
         }
     }
@@ -454,7 +490,7 @@ struct Solver {
         for (auto& in : pre) {  // replay a given prefix program
             ll v = apply(in.op, reg[in.a], reg[in.b]);
             reg[in.d] = v; last[in.a] = last[in.b] = ++clock; last[in.d] = ++clock;
-            prog.push_back(in); need.erase(v); histv.push_back(v);
+            prog.push_back(in); need.erase(v); histv.push_back(v); if (KEEPPRE) keep.insert(v);
         }
         static Dict d;
         if (PALETTE) seedPalette();
@@ -487,7 +523,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i + 1 < argc; i += 2) {
         string k = argv[i]; double v = atof(argv[i + 1]);
         if (k == "-w") BEAM = v; else if (k == "-d") DEPTH = v; else if (k == "-a") ALPHA = v;
-        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v; else if (k == "-V") VC = v; else if (k == "-vs") VSET = v; else if (k == "-P") PREFIX = v; else if (k == "-H") HV = v; else if (k == "-ks") KSMALL = (ll)v; else if (k == "-uw") UCW = (long)v;
+        else if (k == "-o") ORDER = v; else if (k == "-x") APPROX = v; else if (k == "-s") SEED = v; else if (k == "-n") NOISE = v; else if (k == "-sx") SUMAPPROX = v; else if (k == "-k") KEEP = v; else if (k == "-t") TRI = v; else if (k == "-D") DEEP = v; else if (k == "-p") PALETTE = v; else if (k == "-tb") TIEBIG = v; else if (k == "-V") VC = v; else if (k == "-vs") VSET = v; else if (k == "-P") PREFIX = v; else if (k == "-H") HV = v; else if (k == "-ks") KSMALL = (ll)v; else if (k == "-uw") UCW = (long)v; else if (k == "-L") LA = (int)v; else if (k == "-S") SLK = (int)v; else if (k == "-LW") LW = v; else if (k == "-WH") HINTF = (int)v; else if (k == "-WC") WC = (int)v; else if (k == "-KP") KEEPPRE = (int)v; else if (k == "-R") REGSN = (int)v; else if (k == "-LM") LM = (int)v;
     }
     string id; ll limit; int ns, nt;
     while (cin >> id >> limit >> ns >> nt) {
@@ -499,6 +535,16 @@ int main(int argc, char** argv) {
         if (PREFIX) {
             int np; cin >> np; S.pre.resize(np);
             for (auto& in : S.pre) { string op; cin >> op >> in.a >> in.b >> in.d; in.op = op[0]; }
+        }
+        if (HINTF) {  // hint program: nh then nh lines (op a b d), replayed to collect its values
+            int nh; cin >> nh; vector<ll> r(48, 0);
+            for (int i = 0; i < ns && i < 48; i++) r[i] = S.starts[i];
+            for (int i = 0; i < nh; i++) {
+                string op; int a, b, d; cin >> op >> a >> b >> d;
+                ll x = r[a], y = r[b], v = 0; char c = op[0];
+                if (c == '+') v = x + y; else if (c == '-') v = x - y; else if (c == '*') v = x * y; else if (y) v = x / y;
+                r[d] = v; if (v > 0 && v <= LIM) { S.hintv.push_back(v); S.hs.insert(v); }
+            }
         }
         S.run();
         printf("%s [", id.c_str());
